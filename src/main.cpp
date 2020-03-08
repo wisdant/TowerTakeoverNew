@@ -74,7 +74,10 @@ void disabled() {}
  * starts.
  */
 void competition_initialize() {
-	imu_sensor.reset();
+	int retNo = imu_sensor.reset();
+	lcd::print(3, "Reset return code =%d", retNo);
+	lcd::print(4, "PROS_ERR =%d", PROS_ERR);
+	lcd::print(5, "errno =%d", errno);
 
   int iter = 0;
   while (imu_sensor.is_calibrating()) {
@@ -1527,7 +1530,6 @@ void opcontrol() {
 	// NOTE: we assume whenever we move the hinge back, we always move all the way back.
 	// This technically is not 100% accurate, but in reality, it should be the case.
 	// Even if it is not accurate, the driver can always manully move the hinge.
-	bool hinge_at_resting = true;
 	bool hinge_down = true;
 	bool hinge_midway = false;
 
@@ -1546,37 +1548,19 @@ void opcontrol() {
 
 		lcd::print(1, "2/29/2020 1:46PM, left intake port#=%d, counter=%d", LEFT_INTAKE_PORT, counter++);
 
-		/*
-		 * Drivetrain code
-		 * This code controls how the robot moves around the field
-		 */
-
 		// Assign the values from the controller's joysticks to variables
 		left_x = master.get_analog(E_CONTROLLER_ANALOG_LEFT_X);
 		left_y = master.get_analog(E_CONTROLLER_ANALOG_LEFT_Y);
 		right_x = master.get_analog(E_CONTROLLER_ANALOG_RIGHT_X);
 		right_y = master.get_analog(E_CONTROLLER_ANALOG_RIGHT_Y);
 
-		// Filter joystick values to prevent the drive from responding to miscalibrated joysticks
-		// if (std::abs(left_y) < DRIVE_THRESHOLD) {
-		// 	left_y = 0;
-		// }
-		//if (std::abs(right_y) < DRIVE_THRESHOLD) {
-		//	right_y = 0;
-		//}
+		// filter out small moves by the button control
 		if(std::abs(right_x) < DRIVE_THRESHOLD_RIGHT_CONTROL) {
 			right_x = 0;
 		}
 
-		// Choose between arcade and tank drive controls
-		// and assign correct powers for the right and left sides of the robot
-
-
 		if (ARCADE) { // if arcade mode
-			// TODO(Angela): Add special logic to make robot less sensitive to turn signals
-			// right_x represents the strength of turn signals. A simple division of right_x
-			// by 2 will make the robot 50% less sensitive to the turn signals.
-			// <Angela's code goes here.>
+			// Make the robot half sensitive to the turning signals
 			right_x /= 2;
 
 			right_power = left_y - right_x;
@@ -1586,7 +1570,6 @@ void opcontrol() {
 			right_power = right_y;
 			left_power = left_y;
 		}
-
 
 		// Limit motor powers so that they do not exceed the maximum motor possible power value
 		if (std::abs(right_power) > 127) {
@@ -1603,83 +1586,29 @@ void opcontrol() {
 		// Assign power to the motors
 		a_move_drive(right_power, left_power);
 
-		if (right_power != 0) {
-			lcd::print(4, "LF: %d, LR: %d, RF: %d, RR: %d",
-			left_drive.get_position(), left_rear_drive.get_position(),
-			right_drive.get_position(), right_rear_drive.get_position());
+		// **************************
+		// L1: intake								R1: Manual move up hinge
+		// L2: Manual unfold				R2: Manual move back hinge
+		// 						Up: High tower
+		// Left: Midle towers										Right: descore
+		//						Down: Drive away after scoreing
+		//
+		//						X: Small stack scoring
+		// Y:	Move hinge & arms to resting			A: Outtake
+		//						B: Big stack scoring
+		//
+		// **************************
 
-			printf("LF: %f, LR: %f, RF: %f, RR: %f\n",
-			left_drive.get_position(), left_rear_drive.get_position(),
-			right_drive.get_position(), right_rear_drive.get_position());
-		}
-		/*
-		 * Intake code
-		 * This code controls the intake motors
-		 */
+		// L1 button: Intake
 		if (master.get_digital(E_CONTROLLER_DIGITAL_L1) == 1) {
 			a_move_lift(-20);
 
 			a_move_intake(127);
 			hinge_down = true;
-			 // Move the intake belt
-			//while (master.get_digital(E_CONTROLLER_DIGITAL_L1) == 1) { // Wait for the button to be released
-			//	delay(10);
-			//}
-		}
-		if (master.get_digital(E_CONTROLLER_DIGITAL_A) == 1) {
-			lcd::print(3, "L2 pressed");
-			a_move_intake(-100); // Move the intake belt backward, for removing blocks from towers
-			while (master.get_digital(E_CONTROLLER_DIGITAL_A) == 1) {
-				delay(10);
-			}
-			a_move_intake(0);
 		}
 
-		/*
-		 * hinge code
-		 * This code controls the hinge that is responsible for pushing the tray
-		 */
-		 if (master.get_digital(E_CONTROLLER_DIGITAL_R1) == 1) {
- 			lcd::print(4, "R1 pressed");
-			a_move_intake(0); // Stop intake roller
-
- 			a_move_hinge(50); // Move the lift forward
- 			while (master.get_digital(E_CONTROLLER_DIGITAL_R1) == 1) { // Wait for the button to be released
- 				delay(10);
- 			}
- 			a_move_hinge(0);
-			delay(20);
-			hinge_at_resting = false;
- 		}
-
-		 if (master.get_digital(E_CONTROLLER_DIGITAL_R2) == 1) {
- 			lcd::print(4, "R2 pressed");
- 			a_move_intake(0);		// Stop intake roller
- 			a_move_hinge(-127); // Move the hinge backward
- 			while (master.get_digital(E_CONTROLLER_DIGITAL_R2) == 1) {
- 				delay(10);
- 			}
- 			a_move_hinge(0);
-			hinge_at_resting = true;
-			hinge_down = true;
- 		}
-
-		/*
-		 * Lift code
-		 * This code controls the lift
-		 */
+		// L2 button: manually unfold
 		if (master.get_digital(E_CONTROLLER_DIGITAL_L2) == 1) {
-			/*
-				move_hinge(127);
-				delay(150);
-				move_hinge(0);
-				hinge_at_resting = false;
-			move_lift(127);
-			while (master.get_digital(E_CONTROLLER_DIGITAL_A) == 1) {
-				delay(10);
-			}
-			move_lift(20);
-			*/
 			a_move_hinge(127);
 			delay(800);
 			a_move_intake(-80);
@@ -1691,27 +1620,48 @@ void opcontrol() {
 			a_move_hinge(0);
 		}
 
-		// For the high tower
+
+		// R1 button: manually move up the hinge.
+		 if (master.get_digital(E_CONTROLLER_DIGITAL_R1) == 1) {
+ 			lcd::print(4, "R1 pressed");
+			a_move_intake(0); // Stop intake roller
+
+ 			a_move_hinge(50); // Move the lift forward
+ 			while (master.get_digital(E_CONTROLLER_DIGITAL_R1) == 1) { // Wait for the button to be released
+ 				delay(10);
+ 			}
+ 			a_move_hinge(0);
+			delay(20);
+ 		}
+
+		// R2 button: manually move down the hinge
+		 if (master.get_digital(E_CONTROLLER_DIGITAL_R2) == 1) {
+ 			lcd::print(4, "R2 pressed");
+ 			a_move_intake(0);		// Stop intake roller
+ 			a_move_hinge(-127); // Move the hinge backward
+ 			while (master.get_digital(E_CONTROLLER_DIGITAL_R2) == 1) {
+ 				delay(10);
+ 			}
+ 			a_move_hinge(0);
+			hinge_down = true;
+ 		}
+
+		// Up button: Raise arm to the high tower
 		if (master.get_digital(E_CONTROLLER_DIGITAL_UP) == 1) {
 			Task up_task(up_task_fn, &hinge_down, "Up Task");
 		}
 
-
-		// For the middle and alliance towers
+		// Left button: raise arm to the middle / alliance towers
 		if (master.get_digital(E_CONTROLLER_DIGITAL_LEFT) == 1) {
 			Task left_task(left_task_fn, &hinge_down, "Left Task");
 		}
 
-		// For descoring towers
+		// Right button: raise arms for descoring
 		if (master.get_digital(E_CONTROLLER_DIGITAL_RIGHT) == 1) {
 			Task right_task(right_task_fn, &hinge_down, "Right Task");
 		}
 
-		if (master.get_digital(E_CONTROLLER_DIGITAL_Y) == 1) {
-			Task y_task(y_task_fn, &hinge_down, "Y Task");
-		}
-
-		//A special button Y to do a little bit reverse spin of the intake, basically L2
+		//Down button: Drive away while overtaking after scoring
 		if (master.get_digital(E_CONTROLLER_DIGITAL_DOWN) == 1) {
 			int temp_ts = millis();
 			a_move_intake(-40);
@@ -1723,8 +1673,23 @@ void opcontrol() {
 			a_move_intake(0);
 		}
 
+		// Y button: Move hinge and arms to resting
+		if (master.get_digital(E_CONTROLLER_DIGITAL_Y) == 1) {
+			Task y_task(y_task_fn, &hinge_down, "Y Task");
+		}
+
+		// A button: outtake
+		if (master.get_digital(E_CONTROLLER_DIGITAL_A) == 1) {
+			a_move_intake(-100); // Move the intake belt backward, for removing blocks from towers
+			while (master.get_digital(E_CONTROLLER_DIGITAL_A) == 1) {
+				delay(10);
+			}
+			a_move_intake(0);
+		}
+
+
+		// X button: slow scoring
 		if (master.get_digital(E_CONTROLLER_DIGITAL_X) == 1) {
-			//currently, this code is the same as the stackSixEight in auton (2/9)
 			a_move_intake(0);
 		  a_move_lift(-20);
 
@@ -1745,6 +1710,7 @@ void opcontrol() {
 		  a_move_lift(0);
 		}
 
+		// B button: Score a big stack
 		if (master.get_digital(E_CONTROLLER_DIGITAL_B) == 1) {
 			a_move_intake(0);
 		  a_move_lift(-20);
@@ -1776,14 +1742,10 @@ void opcontrol() {
 			a_move_drive(20, 20);
 			delay(460);
 
-			//move_hinge(20);	//Richard: commented out since these two lines are not necessary
-			//delay(1800);
-
 		  a_move_intake(0);
 		  a_move_drive(0, 0);
 		  a_move_hinge(0);
 		  a_move_lift(0);
-			hinge_at_resting = false;
 		}
 
 		delay(10);

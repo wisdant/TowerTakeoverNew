@@ -81,7 +81,7 @@ const int LIFT_PORT = 15;
 
 const int VISION_PORT = 11;
 
-const int IMU_PORT = 8;
+const int IMU_PORT = 2;
 
 
 
